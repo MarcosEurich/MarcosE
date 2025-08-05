@@ -1,0 +1,27 @@
+# data.json
+{
+  "admin_creds": null,
+  "costs": {
+    "A": {
+      "text": "A (2hs)",
+      "duration": 2.0,
+      "cost": 190000
+    },
+    "B": {
+      "text": "B (1.5hs)",
+      "duration": 1.5,
+      "cost": 87000
+    },
+    "C": {
+      "text": "C (0.5hs)",
+      "duration": 0.5,
+      "cost": 55000
+    },
+    "D": {
+      "text": "D (1h)",
+      "duration": 1.0,
+      "cost": 76000
+    }
+  },
+  "appointments": []
+}
