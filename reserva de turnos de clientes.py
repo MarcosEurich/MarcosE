@@ -112,5 +112,4 @@ elif st.session_state.role == "admin" and st.session_state.logged_in:
     display_admin_view()
 else:
     display_login()
- # Ignorar la carpeta de configuración de Streamlit que contiene los secretos
-.streamlit/secrets.toml   
+
