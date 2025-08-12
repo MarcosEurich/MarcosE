@@ -15,6 +15,7 @@ def load_css():
         .stButton>button {
             width: 100%;
             border-radius: 8px;
+            padding: 0.8em 0.2em; /* Ajuste para que el texto no se corte */
         }
         .main-container { max-width: 1200px; margin: auto; }
         .card {
@@ -26,21 +27,30 @@ def load_css():
         }
         h1 { color: #4A90E2; }
         h2 { border-bottom: 2px solid #EAF2FB; padding-bottom: 0.75rem; }
-        .day-btn {
+        
+        /* <-- CAMBIO: Contenedor específico para forzar la cuadrícula del calendario */
+        .calendar-grid-container .stHorizontalBlock {
             display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 50px;
-            border-radius: 8px;
-            border: 2px solid transparent;
-            transition: all 0.2s;
+            flex-wrap: wrap;
+            justify-content: space-between;
         }
+        .calendar-grid-container .stButton {
+            flex-basis: 13%; /* Aproximadamente 1/7 */
+            max-width: 13%;
+            padding: 2px;
+        }
+
         .day-btn-available { background-color: #d4edda; }
         .day-btn-one-slot { background-color: #fff3cd; }
-        .day-btn-full { background-color: #f8d7da; cursor: not-allowed; }
-        .day-btn-selected { border-color: #4A90E2 !important; background-color: #EAF2FB; }
-        .day-btn-weekend { color: #7A8188; background-color: #f8d7da; }
-        .calendar-legend { display: flex; justify-content: center; gap: 1.5rem; margin-top: 1.5rem; font-size: 0.8rem; }
+        .day-btn-full, .day-btn-weekend { 
+            background-color: #f8d7da;
+            color: #7A8188 !important; /* Asegurar color del texto en fines de semana */
+        }
+        .day-btn-selected { 
+            border: 2px solid #4A90E2 !important;
+            background-color: #EAF2FB !important;
+        }
+        .calendar-legend { display: flex; flex-wrap: wrap; justify-content: center; gap: 1rem; margin-top: 1.5rem; font-size: 0.8rem; }
         .legend-item { display: flex; align-items: center; gap: 0.5rem; }
         .legend-color { width: 15px; height: 15px; border-radius: 4px; }
     </style>
@@ -50,14 +60,13 @@ load_css()
 
 # --- CONSTANTES Y GESTIÓN DE DATOS ---
 DATA_FILE = "data.json"
-ONE_TIME_REGISTRATION_KEY = "REFRIGERACION_2024" # Clave secreta para registrar al primer admin
+ONE_TIME_REGISTRATION_KEY = "REFRIGERACION_2024"
 
 def load_data():
     try:
         with open(DATA_FILE, 'r') as f:
             return json.load(f)
     except FileNotFoundError:
-        # Si el archivo no existe, lo creamos con la estructura por defecto
         default_data = {
             "admin_creds": None,
             "costs": { "A": {"text": "A (2hs)","duration": 2.0,"cost": 190000},"B": {"text": "B (1.5hs)","duration": 1.5,"cost": 87000},"C": {"text": "C (0.5hs)","duration": 0.5,"cost": 55000},"D": {"text": "D (1h)","duration": 1.0,"cost": 76000}},
@@ -84,9 +93,8 @@ if 'initialized' not in st.session_state:
     st.session_state.selected_date = None
 
 # --- VISTAS DE LA APLICACIÓN ---
-
 def display_login():
-    """Muestra la interfaz de selección de rol y login/registro de admin."""
+    # Esta función no tiene cambios
     st.title("Bienvenido al Sistema de Turnos")
 
     col1, col2 = st.columns(2)
@@ -101,7 +109,6 @@ def display_login():
     if st.session_state.get('show_admin_login', False):
         st.markdown("---")
         if st.session_state.data['admin_creds']:
-            # Formulario de Login
             with st.form("admin_login_form"):
                 st.subheader("Acceso de Administrador")
                 email = st.text_input("Email")
@@ -116,7 +123,6 @@ def display_login():
                     else:
                         st.error("Email o contraseña incorrectos.")
         else:
-            # Formulario de Registro (Única Vez)
             with st.form("admin_register_form"):
                 st.subheader("Registro de Administrador (Única Vez)")
                 email = st.text_input("Su Email")
@@ -135,74 +141,76 @@ def display_login():
                     else:
                         st.error("Clave de Registro incorrecta.")
 
+
+# <-- CAMBIO: Función del calendario completamente reescrita para ser responsiva
 def display_calendar():
-    """Muestra un calendario interactivo para seleccionar la fecha."""
+    """Muestra un calendario interactivo que funciona en móvil y escritorio."""
     st.subheader("3. Seleccione un día disponible")
 
-    # Navegación del mes
     col1, col2, col3 = st.columns([1, 2, 1])
     if col1.button("< Mes Anterior"):
-        st.session_state.cal_date -= timedelta(days=30)
+        st.session_state.cal_date -= timedelta(days=st.session_state.cal_date.day)
+        st.rerun()
     col2.write(f"<p style='text-align:center; font-weight:bold; font-size:1.2rem;'>{st.session_state.cal_date.strftime('%B %Y')}</p>", unsafe_allow_html=True)
     if col3.button("Mes Siguiente >"):
-        st.session_state.cal_date += timedelta(days=30)
+        st.session_state.cal_date += timedelta(days=31)
+        st.rerun()
 
-    # Días de la semana
+    # Pre-calcular disponibilidad para el mes
+    appts_df = pd.DataFrame(st.session_state.data['appointments'])
+    slots_per_day = pd.Series(dtype=int)
+    if not appts_df.empty:
+        appts_df['date_dt'] = pd.to_datetime(appts_df['date'])
+        slots_per_day = appts_df.explode('timeSlots').groupby(appts_df['date_dt'].dt.date).size()
+
+    # Abrir contenedor con la clase CSS para forzar la cuadrícula
+    st.markdown("<div class='calendar-grid-container'>", unsafe_allow_html=True)
+    
     days_of_week = ["L", "M", "X", "J", "V", "S", "D"]
     cols = st.columns(7)
     for i, day_name in enumerate(days_of_week):
         cols[i].write(f"<p style='text-align:center; font-weight:bold;'>{day_name}</p>", unsafe_allow_html=True)
-    
-    # Grid del calendario
+
     first_day = st.session_state.cal_date.replace(day=1)
-    last_day = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-    
-    # Citas del mes actual
-    appts_df = pd.DataFrame(st.session_state.data['appointments'])
-    if not appts_df.empty:
-        appts_df['date_dt'] = pd.to_datetime(appts_df['date'])
-        slots_per_day = appts_df.explode('timeSlots').groupby(appts_df['date_dt'].dt.date).size()
-    else:
-        slots_per_day = pd.Series()
+    last_day_of_month = (first_day.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     
     cols = st.columns(7)
+    # Rellenar días en blanco al inicio del mes
     for i in range(first_day.weekday()):
-        cols[i].empty() # Relleno para que el 1er día caiga correctamente
+        cols[i].empty()
     
     current_col = first_day.weekday()
-    for day_num in range(1, last_day.day + 1):
-        day = first_day.replace(day=day_num)
-        with cols[current_col]:
-            css_class = ""
-            if day.weekday() >= 5: # Sábado y Domingo
-                css_class = "day-btn-weekend"
-                st.markdown(f"<div class='day-btn {css_class}'>{day_num}</div>", unsafe_allow_html=True)
-            else:
-                slots_booked = slots_per_day.get(day.date(), 0)
-                if slots_booked == 0: css_class = "day-btn-available"
-                elif slots_booked == 1: css_class = "day-btn-one-slot"
-                else: css_class = "day-btn-full"
-                
-                if st.session_state.selected_date and st.session_state.selected_date == day.date():
-                    css_class += " day-btn-selected"
+    for day_num in range(1, last_day_of_month.day + 1):
+        day_date = first_day.replace(day=day_num)
+        
+        is_weekend = day_date.weekday() >= 5
+        slots_booked = slots_per_day.get(day_date.date(), 0)
+        is_full = slots_booked >= 2
+        is_selected = st.session_state.selected_date and st.session_state.selected_date == day_date.date()
+        is_disabled = is_weekend or is_full
 
-                if st.button(f"{day_num}", key=f"day_{day_num}"):
-                    if slots_booked < 2:
-                        st.session_state.selected_date = day.date()
-                        st.rerun() # Volver a ejecutar para reflejar selección y horarios
-                    else:
-                        st.toast("Este día está completo.", icon="⚠️")
+        # Aquí no podemos aplicar CSS a los botones directamente
+        # En su lugar, el CSS se aplicará a través del contenedor padre
+        with cols[current_col]:
+            if st.button(f"{day_num}", key=f"day_{day_num}", disabled=is_disabled):
+                st.session_state.selected_date = day_date.date()
+                st.rerun()
+            
+            # Placeholder para dar espacio, esto se podría mejorar con CSS más avanzado
+            if not is_disabled:
+                 st.write("")
+
 
         current_col = (current_col + 1) % 7
-    
-    # Leyenda de colores
-    st.markdown("""
-    <div class='calendar-legend'>
-        <div class='legend-item'><div class='legend-color' style='background-color: #d4edda;'></div><span>Disponible</span></div>
-        <div class='legend-item'><div class='legend-color' style='background-color: #fff3cd;'></div><span>1 Turno</span></div>
-        <div class='legend-item'><div class='legend-color' style='background-color: #f8d7da;'></div><span>Lleno/Finde</span></div>
-    </div>""", unsafe_allow_html=True)
 
+    st.markdown("</div>", unsafe_allow_html=True) # Cerrar el contenedor
+
+    # Leyenda de colores (los colores no se pueden aplicar a los botones, es una limitación)
+    st.markdown("""<p style="font-size: 0.9em; text-align: center; margin-top: 1em;">
+    La disponibilidad se indica deshabilitando los días llenos o de fin de semana.</p>""", unsafe_allow_html=True)
+    
+    
+# El resto de las funciones (display_client_view, display_admin_view) no necesitan cambios
 def display_client_view():
     st.title("Reserva de Turno")
     col1, col2 = st.columns([1.2, 1])
@@ -225,7 +233,6 @@ def display_client_view():
                 st.subheader("2. Cantidad de Aires")
                 ac_quantity = st.number_input("Indique la cantidad", min_value=1, value=1, step=1)
                 
-                # Deshabilitamos la selección de horario hasta que se elija una fecha
                 st.subheader("4. Horario(s) Disponibles")
                 available_time_slots = ["16:00 - 18:00hs", "18:00 - 20:00hs"]
                 if st.session_state.selected_date:
@@ -238,37 +245,35 @@ def display_client_view():
 
                 selected_time_slots = st.multiselect(
                     "Seleccione los horarios", options=available_time_slots, 
-                    disabled=(not st.session_state.selected_date)
+                    disabled=(not st.session_state.selected_date),
+                    placeholder= "Seleccione un día del calendario primero" if not st.session_state.selected_date else "Elija un horario"
                 )
+                if st.session_state.selected_date:
+                    st.info(f"Día seleccionado: {st.session_state.selected_date.strftime('%d/%m/%Y')}")
 
                 submitted = st.form_submit_button("Guardar Turno")
                 if submitted:
                     base_duration = sum(costs[job_id]['duration'] for job_id in selected_job_ids)
                     total_duration = base_duration * ac_quantity
-                    selected_capacity = len(selected_time_slots) * 2 # Cada slot son 2hs
+                    selected_capacity = len(selected_time_slots) * 2
                     
-                    # Validación
                     if not all([name, address, phone, selected_job_ids, st.session_state.selected_date, selected_time_slots]):
                         st.error("Por favor, complete todos los campos y seleccione fecha y horario.")
                     elif total_duration > selected_capacity:
                         st.error(f"Error: La duración del trabajo ({total_duration}hs) excede la capacidad del horario seleccionado ({selected_capacity}hs).")
                     else:
-                        new_appointment = {
-                            "id": int(datetime.now().timestamp()), "status": "pending",
-                            "clientName": name, "address": address, "phone": phone,
-                            "date": st.session_state.selected_date.strftime('%Y-%m-%d'),
-                            "quantity": ac_quantity, "jobs": selected_job_ids,
-                            "timeSlots": selected_time_slots, "totalDuration": total_duration
-                        }
+                        new_appointment = { "id": int(datetime.now().timestamp()), "status": "pending", "clientName": name, "address": address, "phone": phone, "date": st.session_state.selected_date.strftime('%Y-%m-%d'), "quantity": ac_quantity, "jobs": selected_job_ids, "timeSlots": selected_time_slots, "totalDuration": total_duration }
                         st.session_state.data['appointments'].append(new_appointment)
                         save_data(st.session_state.data)
-                        st.session_state.selected_date = None # Resetear fecha
+                        st.session_state.selected_date = None
                         st.success("¡Turno guardado con éxito!")
                         st.toast("Recargando calendario...", icon="🔄")
+                        st.rerun()
 
     with col2:
         with st.container(border=True):
             display_calendar()
+
 
 def display_admin_view():
     st.title("Panel de Administración")
@@ -309,21 +314,13 @@ def display_admin_view():
                 with col2:
                     statuses = ["pending", "completed", "not_completed"]
                     current_status_index = statuses.index(appt['status'])
-                    new_status = st.selectbox(
-                        "Estado", statuses, index=current_status_index,
-                        key=f"status_{appt['id']}"
-                    )
-                    # Actualizar estado si cambia
+                    new_status = st.selectbox( "Estado", statuses, index=current_status_index, key=f"status_{appt['id']}")
                     if new_status != appt['status']:
-                        # Buscar el appointment original y actualizarlo
                         for original_appt in st.session_state.data['appointments']:
-                            if original_appt['id'] == appt['id']:
-                                original_appt['status'] = new_status
-                                break
+                            if original_appt['id'] == appt['id']: original_appt['status'] = new_status; break
                         save_data(st.session_state.data)
                         st.toast(f"Turno de {appt['clientName']} actualizado a {new_status}", icon="✔️")
                         st.rerun()
-
 
     with tab2:
         st.subheader("Gestionar Costos de Trabajos")
@@ -331,10 +328,8 @@ def display_admin_view():
             new_costs = {}
             for job_id, details in st.session_state.data['costs'].items():
                 new_costs[job_id] = st.number_input(f"Costo Trabajo {job_id} ({details['text']})", value=details['cost'], min_value=0)
-            
             if st.form_submit_button("Guardar Cambios"):
-                for job_id, cost in new_costs.items():
-                    st.session_state.data['costs'][job_id]['cost'] = cost
+                for job_id, cost in new_costs.items(): st.session_state.data['costs'][job_id]['cost'] = cost
                 save_data(st.session_state.data)
                 st.success("Costos actualizados correctamente.")
 
@@ -347,15 +342,13 @@ def display_admin_view():
                 if appt['status'] == 'pending':
                     current_date = datetime.strptime(appt['date'], '%Y-%m-%d')
                     next_day = current_date + timedelta(days=1)
-                    while next_day.weekday() >= 5: # Saltar fines de semana
-                        next_day += timedelta(days=1)
+                    while next_day.weekday() >= 5: next_day += timedelta(days=1)
                     appt['date'] = next_day.strftime('%Y-%m-%d')
                     updated_count += 1
             if updated_count > 0:
                 save_data(st.session_state.data)
                 st.success(f"{updated_count} turnos pendientes han sido reprogramados.")
-            else:
-                st.info("No había turnos pendientes para reprogramar.")
+            else: st.info("No había turnos pendientes para reprogramar.")
             st.rerun()
 
 # --- LÓGICA PRINCIPAL ---
